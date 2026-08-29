@@ -1,6 +1,9 @@
 import { Resvg } from '@resvg/resvg-js';
 import { getNowPlaying } from '$lib/spotify';
+import { join } from 'node:path';
 import type { RequestHandler } from './$types';
+
+const fontsDir = join(process.cwd(), 'src/lib/fonts');
 
 function escapeXml(unsafe: string): string {
 	return unsafe
@@ -11,7 +14,7 @@ function escapeXml(unsafe: string): string {
 		.replace(/'/g, '&apos;');
 }
 
-function wrapTitle(text: string, maxChars = 24): string[] {
+function wrapTitle(text: string, maxChars = 22): string[] {
 	if (text.length <= maxChars) return [text];
 	const words = text.split(' ');
 	const lines: string[] = [];
@@ -33,6 +36,28 @@ function wrapTitle(text: string, maxChars = 24): string[] {
 	return lines;
 }
 
+// Extract approximate dominant RGB from raw image buffer
+function extractAverageColor(buffer: Buffer): { r: number; g: number; b: number } {
+	let totalR = 0,
+		totalG = 0,
+		totalB = 0,
+		count = 0;
+	// Sample bytes across buffer
+	const step = Math.max(1, Math.floor(buffer.length / 500));
+	for (let i = 100; i < buffer.length - 3; i += step) {
+		totalR += buffer[i];
+		totalG += buffer[i + 1];
+		totalB += buffer[i + 2];
+		count++;
+	}
+	if (count === 0) return { r: 30, g: 58, b: 147 };
+	return {
+		r: Math.round(totalR / count),
+		g: Math.round(totalG / count),
+		b: Math.round(totalB / count)
+	};
+}
+
 export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const song = await getNowPlaying();
@@ -43,140 +68,131 @@ export const GET: RequestHandler = async ({ url }) => {
 		const imageUrl = song.albumImageUrl || '';
 
 		let imageBase64 = '';
+		let avgColor = { r: 30, g: 58, b: 147 };
+
 		if (imageUrl) {
 			try {
 				const imgRes = await fetch(imageUrl);
 				if (imgRes.ok) {
-					const buffer = await imgRes.arrayBuffer();
-					const base64 = Buffer.from(buffer).toString('base64');
+					const arrayBuf = await imgRes.arrayBuffer();
+					const buffer = Buffer.from(arrayBuf);
+					avgColor = extractAverageColor(buffer);
 					const mime = imgRes.headers.get('content-type') || 'image/jpeg';
-					imageBase64 = `data:${mime};base64,${base64}`;
+					imageBase64 = `data:${mime};base64,${buffer.toString('base64')}`;
 				}
 			} catch (e) {
 				console.error('[OG Image] Failed to fetch album image:', e);
 			}
 		}
 
+		// Luminance & high-contrast palette matching mobile
+		const luminance = (0.2126 * avgColor.r + 0.7152 * avgColor.g + 0.0722 * avgColor.b) / 255;
+		const isLight = luminance > 0.52;
+
+		const bgColor = `rgb(${avgColor.r}, ${avgColor.g}, ${avgColor.b})`;
+		const textColor = isLight ? '#0c0e14' : '#ffffff';
+		const textMutedColor = isLight ? 'rgba(12, 14, 20, 0.65)' : 'rgba(255, 255, 255, 0.65)';
+		const railBg = isLight ? 'rgba(12, 14, 20, 0.15)' : 'rgba(255, 255, 255, 0.2)';
+
 		const titleLines = wrapTitle(rawTitle, 22).map(escapeXml);
 		const safeArtist = escapeXml(rawArtist.length > 36 ? rawArtist.slice(0, 34) + '...' : rawArtist);
-		const safeAlbum = escapeXml(rawAlbum.length > 40 ? rawAlbum.slice(0, 38) + '...' : rawAlbum);
+		const statusOrAlbum = escapeXml(
+			song.isRecentlyPlayed ? 'LAST PLAYED' : rawAlbum ? rawAlbum.slice(0, 36) : 'LIVE STREAM'
+		);
 
-		const isPlaying = song.isPlaying;
-		const statusText = isPlaying
-			? 'N3RD IS LISTENING TO'
-			: song.isRecentlyPlayed
-				? 'N3RD WAS LISTENING TO'
-				: 'N3RD // NOW PLAYING';
-		const statusColor = isPlaying ? '#4ade80' : '#94a3b8';
-
-		const titleFontSize = titleLines.length > 1 ? 38 : 44;
-		const titleYStart = titleLines.length > 1 ? 260 : 280;
+		const titleFontSize = titleLines.length > 1 ? 40 : 48;
+		const titleYStart = titleLines.length > 1 ? 235 : 255;
+		const artistY = titleYStart + titleLines.length * 48 + 10;
+		const subtitleY = artistY + 36;
 
 		const svg = `
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0c1322"/>
-      <stop offset="50%" stop-color="#070b14"/>
-      <stop offset="100%" stop-color="#03050a"/>
-    </linearGradient>
+    <filter id="bgBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="80"/>
+      <feColorMatrix type="saturate" values="1.6"/>
+    </filter>
 
     <radialGradient id="vinylShine" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.09"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.1"/>
       <stop offset="35%" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="65%" stop-color="#ffffff" stop-opacity="0.06"/>
+      <stop offset="65%" stop-color="#ffffff" stop-opacity="0.07"/>
       <stop offset="100%" stop-color="#000000" stop-opacity="0.75"/>
     </radialGradient>
 
-    <radialGradient id="ambientGlow" cx="28%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="#1d3557" stop-opacity="0.5"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-
     <filter id="vinylShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="18" stdDeviation="28" flood-color="#000000" flood-opacity="0.95"/>
+      <feDropShadow dx="0" dy="24" stdDeviation="36" flood-color="#000000" flood-opacity="0.75"/>
     </filter>
 
-    <clipPath id="artClip">
-      <circle cx="310" cy="315" r="105"/>
+    <clipPath id="vinylArtClip">
+      <circle cx="290" cy="315" r="180"/>
     </clipPath>
   </defs>
 
-  <!-- Background Layer -->
-  <rect width="1200" height="630" fill="url(#bgGrad)"/>
-  <rect width="1200" height="630" fill="url(#ambientGlow)"/>
+  <!-- Base Dynamic Background Color -->
+  <rect width="1200" height="630" fill="${bgColor}"/>
 
-  <!-- Minimal Border Framing -->
-  <line x1="60" y1="50" x2="1140" y2="50" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
-  <line x1="60" y1="580" x2="1140" y2="580" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <!-- Stretched Blurred Album Artwork Mesh (matching mobile) -->
+  ${
+		imageBase64
+			? `<image href="${imageBase64}" x="-120" y="-120" width="1440" height="870" preserveAspectRatio="xMidYMid slice" opacity="0.45" filter="url(#bgBlur)"/>`
+			: ''
+	}
 
-  <!-- Vinyl Record Disc -->
+  <!-- Mobile-style Prominent Vinyl Disc -->
   <g filter="url(#vinylShadow)">
     <!-- Outer Vinyl Body -->
-    <circle cx="310" cy="315" r="225" fill="#080b12" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
+    <circle cx="290" cy="315" r="200" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.12" stroke-width="2"/>
     
-    <!-- Concentric Grooves -->
-    <circle cx="310" cy="315" r="215" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1.5"/>
-    <circle cx="310" cy="315" r="200" fill="none" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
-    <circle cx="310" cy="315" r="185" fill="none" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
-    <circle cx="310" cy="315" r="170" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1.5"/>
-    <circle cx="310" cy="315" r="155" fill="none" stroke="#ffffff" stroke-opacity="0.03" stroke-width="1"/>
-    <circle cx="310" cy="315" r="140" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
-    <circle cx="310" cy="315" r="125" fill="none" stroke="#ffffff" stroke-opacity="0.05" stroke-width="1.5"/>
+    <!-- Concentric Vinyl Grooves -->
+    <circle cx="290" cy="315" r="195" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1.5"/>
+    <circle cx="290" cy="315" r="188" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1"/>
 
-    <!-- Light Sheen Reflection -->
-    <circle cx="310" cy="315" r="225" fill="url(#vinylShine)"/>
-
-    <!-- Center Album Artwork -->
+    <!-- Full Centered Artwork Disc (matching mobile player) -->
     ${
 			imageBase64
-				? `<image href="${imageBase64}" x="205" y="210" width="210" height="210" preserveAspectRatio="xMidYMid slice" clip-path="url(#artClip)"/>`
-				: `<circle cx="310" cy="315" r="105" fill="#1e293b" stroke="#ffffff" stroke-opacity="0.1"/>`
+				? `<image href="${imageBase64}" x="110" y="135" width="360" height="360" preserveAspectRatio="xMidYMid slice" clip-path="url(#vinylArtClip)"/>`
+				: `<circle cx="290" cy="315" r="180" fill="#1e293b"/>`
 		}
 
-    <!-- Center Label Vignette Overlay -->
-    <circle cx="310" cy="315" r="105" fill="none" stroke="#000000" stroke-opacity="0.4" stroke-width="6"/>
+    <!-- Vinyl Sheen Reflection -->
+    <circle cx="290" cy="315" r="180" fill="url(#vinylShine)"/>
 
-    <!-- Spindle Hub & Metal Center -->
-    <circle cx="310" cy="315" r="24" fill="#080b12" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
-    <circle cx="310" cy="315" r="8" fill="#000000" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1"/>
+    <!-- Inner Edge Vignette -->
+    <circle cx="290" cy="315" r="180" fill="none" stroke="#000000" stroke-opacity="0.45" stroke-width="8"/>
+
+    <!-- Center Spindle Hub & Ring (matching mobile) -->
+    <circle cx="290" cy="315" r="22" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.25" stroke-width="2"/>
+    <circle cx="290" cy="315" r="7" fill="#000000" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1"/>
   </g>
 
-  <!-- Typography Content -->
-  <g transform="translate(600, 0)">
-    <!-- Eyebrow Status -->
-    <g transform="translate(0, 185)">
-      <circle cx="5" cy="-5" r="4.5" fill="${statusColor}"/>
-      <text x="22" y="0" fill="${statusColor}" font-family="monospace" font-size="13" font-weight="700" letter-spacing="3">${statusText}</text>
-    </g>
+  <!-- Typography Content (Exact Mobile Layout & Text Type) -->
+  <g transform="translate(560, 0)">
+    <!-- Top Header: [ HOME ] style label (NO beeping badges) -->
+    <text x="0" y="145" fill="${textMutedColor}" font-family="monospace" font-size="12" font-weight="700" letter-spacing="4">[ N3RD // SPOTIFY ]</text>
 
-    <!-- Track Title (Supports Multi-line) -->
-    <text x="0" y="${titleYStart}" fill="#ffffff" font-family="Georgia, serif" font-size="${titleFontSize}" font-weight="700" letter-spacing="-0.5">
-      ${titleLines.map((line, idx) => `<tspan x="0" dy="${idx === 0 ? 0 : 46}">${line}</tspan>`).join('')}
+    <!-- Track Title in Boska Editorial Serif -->
+    <text x="0" y="${titleYStart}" fill="${textColor}" font-family="Boska, Georgia, serif" font-size="${titleFontSize}" font-weight="700" letter-spacing="-0.5">
+      ${titleLines.map((line, idx) => `<tspan x="0" dy="${idx === 0 ? 0 : 50}">${line}</tspan>`).join('')}
     </text>
 
-    <!-- Artist Name -->
-    <text x="0" y="${titleYStart + titleLines.length * 46 + 15}" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="500" letter-spacing="2" text-transform="uppercase">${safeArtist}</text>
+    <!-- Artist in Clean Tracked Uppercase -->
+    <text x="0" y="${artistY}" fill="${textMutedColor}" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" letter-spacing="2.5" text-transform="uppercase">${safeArtist}</text>
 
-    <!-- Album Name (if present) -->
-    ${
-			safeAlbum
-				? `<text x="0" y="${titleYStart + titleLines.length * 46 + 55}" fill="#94a3b8" font-family="monospace" font-size="14" letter-spacing="3" text-transform="uppercase">${safeAlbum}</text>`
-				: ''
-		}
+    <!-- Subtitle (LAST PLAYED or Album Name) -->
+    <text x="0" y="${subtitleY}" fill="${textMutedColor}" font-family="monospace" font-size="13" font-weight="600" letter-spacing="3" text-transform="uppercase">${statusOrAlbum}</text>
 
-    <!-- Progress Rail -->
+    <!-- Minimalist Scrubber Progress Bar -->
     <g transform="translate(0, 440)">
-      <rect width="480" height="3" rx="1.5" fill="#ffffff" fill-opacity="0.15"/>
-      <rect width="220" height="3" rx="1.5" fill="#ffffff"/>
-      <circle cx="220" cy="1.5" r="5" fill="#ffffff"/>
-      <text x="0" y="24" fill="#64748b" font-family="monospace" font-size="11" letter-spacing="1">LIVE STREAM</text>
-      <text x="480" y="24" text-anchor="end" fill="#64748b" font-family="monospace" font-size="11" letter-spacing="1">SPOTIFY</text>
+      <rect width="520" height="3" rx="1.5" fill="${railBg}"/>
+      <rect width="240" height="3" rx="1.5" fill="${textColor}"/>
+      <text x="0" y="24" fill="${textMutedColor}" font-family="monospace" font-size="11" font-weight="600" letter-spacing="1">0:18</text>
+      <text x="520" y="24" text-anchor="end" fill="${textMutedColor}" font-family="monospace" font-size="11" font-weight="600" letter-spacing="1">-1:38</text>
     </g>
 
-    <!-- Brand Footer -->
-    <g transform="translate(0, 525)">
-      <text x="0" y="0" fill="#64748b" font-family="monospace" font-size="12" letter-spacing="3">MUSIC.N3-RD.XYZ</text>
+    <!-- Direct Spotify Action Link -->
+    <g transform="translate(0, 520)">
+      <text x="0" y="0" fill="${textColor}" font-family="monospace" font-size="12" font-weight="700" letter-spacing="3">OPEN SPOTIFY ↗</text>
     </g>
   </g>
 </svg>
@@ -186,6 +202,11 @@ export const GET: RequestHandler = async ({ url }) => {
 			fitTo: {
 				mode: 'width',
 				value: 1200
+			},
+			font: {
+				fontDirs: [fontsDir],
+				defaultFontFamily: 'Boska',
+				loadSystemFonts: true
 			}
 		});
 
