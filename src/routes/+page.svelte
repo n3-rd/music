@@ -86,17 +86,21 @@
 	// Dynamic SEO computed tags
 	let seoTitle = $derived(
 		song.isPlaying || song.isRecentlyPlayed
-			? `${song.title} — ${song.artist} | Now Playing`
-			: 'Now Playing | n3-rd'
+			? `N3RD is listening to ${song.title}`
+			: 'Now Playing | N3RD'
 	);
 
 	let seoDescription = $derived(
 		song.isPlaying || song.isRecentlyPlayed
-			? `Currently listening to ${song.title} by ${song.artist}${song.album ? ` on ${song.album}` : ''}. Live Spotify playback stream.`
-			: 'Live Spotify Now Playing stream by Godwin.'
+			? `N3RD is listening to ${song.title} by ${song.artist}${song.album ? ` on ${song.album}` : ''}. Live Spotify stream.`
+			: 'Live Spotify Now Playing stream by N3RD.'
 	);
 
-	let seoImage = $derived(song.albumImageUrl || 'https://music.n3-rd.xyz/preview.png');
+	let seoImage = $derived(
+		song.title && song.title !== 'Not Playing' && song.title !== 'Loading...'
+			? `https://music.n3-rd.xyz/api/og?t=${encodeURIComponent(song.title)}&a=${encodeURIComponent(song.artist)}`
+			: 'https://music.n3-rd.xyz/api/og'
+	);
 
 	$effect(() => {
 		try {
@@ -419,7 +423,7 @@
 	<link rel="canonical" href="https://music.n3-rd.xyz" />
 
 	<!-- Open Graph / Facebook / Discord / WhatsApp -->
-	<meta property="og:site_name" content="Godwin | Music" />
+	<meta property="og:site_name" content="N3RD | Music" />
 	<meta property="og:type" content="music.song" />
 	<meta property="og:url" content="https://music.n3-rd.xyz" />
 	<meta property="og:title" content={seoTitle} />
