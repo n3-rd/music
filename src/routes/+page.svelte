@@ -257,7 +257,61 @@
 		}, 800);
 	}
 
+	let isShareOpen = $state(false);
+	let copied = $state(false);
+
+	function openShare(e?: MouseEvent) {
+		if (e) e.stopPropagation();
+		isShareOpen = true;
+	}
+
+	function closeShare() {
+		isShareOpen = false;
+		copied = false;
+	}
+
+	function copyLink() {
+		const shareUrl = 'https://music.n3-rd.xyz';
+		if (typeof navigator !== 'undefined' && navigator.clipboard) {
+			navigator.clipboard.writeText(shareUrl).then(() => {
+				copied = true;
+				setTimeout(() => {
+					copied = false;
+				}, 2000);
+			});
+		}
+	}
+
+	function shareToTwitter() {
+		const text = `N3RD is listening to ${song.title} by ${song.artist}`;
+		const url = `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent('https://music.n3-rd.xyz')}`;
+		window.open(url, '_blank', 'width=600,height=450');
+	}
+
+	function shareToWhatsApp() {
+		const text = `N3RD is listening to ${song.title} by ${song.artist} — https://music.n3-rd.xyz`;
+		const url = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+		window.open(url, '_blank');
+	}
+
+	function shareToTelegram() {
+		const text = `N3RD is listening to ${song.title} by ${song.artist}`;
+		const url = `https://t.me/share/url?url=${encodeURIComponent('https://music.n3-rd.xyz')}&text=${encodeURIComponent(text)}`;
+		window.open(url, '_blank');
+	}
+
+	function downloadStory() {
+		const storyUrl = `/api/og?format=story${song.title ? `&t=${encodeURIComponent(song.title)}&a=${encodeURIComponent(song.artist)}&album=${encodeURIComponent(song.album || '')}` : ''}`;
+		const a = document.createElement('a');
+		a.href = storyUrl;
+		a.download = `${(song.title || 'now-playing').toLowerCase().replace(/[^a-z0-9]/g, '-')}-story.png`;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+	}
+
 	function handlePageClick(event: MouseEvent) {
+		if (isShareOpen) return;
 		const target = event.target as HTMLElement;
 		if (target && (target.closest('button') || target.closest('a'))) {
 			return;
@@ -269,6 +323,28 @@
 
 	function toggleMute() {
 		isMuted = !isMuted;
+	}
+
+	function shareToSnapchat() {
+		const pageUrl = 'https://music.n3-rd.xyz';
+		const stickerUrl = `https://music.n3-rd.xyz/api/og?format=sticker${song.title ? `&t=${encodeURIComponent(song.title)}&a=${encodeURIComponent(song.artist)}` : ''}`;
+
+		const snapWebUrl = `https://www.snapchat.com/share?attachmentUrl=${encodeURIComponent(pageUrl)}&sticker=${encodeURIComponent(stickerUrl)}`;
+		const snapAppUrl = `snapchat://creativekit/preview?attachmentUrl=${encodeURIComponent(pageUrl)}&sticker=${encodeURIComponent(stickerUrl)}`;
+
+		if (typeof window !== 'undefined') {
+			if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+				const start = Date.now();
+				window.location.href = snapAppUrl;
+				setTimeout(() => {
+					if (Date.now() - start < 1500) {
+						window.open(snapWebUrl, '_blank');
+					}
+				}, 800);
+			} else {
+				window.open(snapWebUrl, '_blank', 'width=600,height=750');
+			}
+		}
 	}
 
 	function updateBgColor(imageUrl: string) {
@@ -402,7 +478,14 @@
 		loopId = requestAnimationFrame(tick);
 		const pollInterval = setInterval(fetchNowPlaying, 10000);
 
+		const handleKeydown = (e: KeyboardEvent) => {
+			if (e.key === 'Escape' && isShareOpen) {
+				closeShare();
+			}
+		};
+
 		window.addEventListener('resize', handleResize);
+		window.addEventListener('keydown', handleKeydown);
 
 		return () => {
 			clearTimeout(setupTimer);
@@ -413,6 +496,7 @@
 			}
 			cancelAnimationFrame(loopId);
 			window.removeEventListener('resize', handleResize);
+			window.removeEventListener('keydown', handleKeydown);
 		};
 	});
 </script>
@@ -422,13 +506,17 @@
 	<meta name="description" content={seoDescription} />
 	<link rel="canonical" href="https://music.n3-rd.xyz" />
 
-	<!-- Open Graph / Facebook / Discord / WhatsApp -->
+	<!-- Open Graph / Snapchat / Facebook / Discord / WhatsApp -->
 	<meta property="og:site_name" content="N3RD | Music" />
 	<meta property="og:type" content="music.song" />
 	<meta property="og:url" content="https://music.n3-rd.xyz" />
 	<meta property="og:title" content={seoTitle} />
 	<meta property="og:description" content={seoDescription} />
 	<meta property="og:image" content={seoImage} />
+	<meta property="og:image:secure_url" content={seoImage} />
+	<meta property="og:image:type" content="image/png" />
+	<meta property="og:image:width" content="1200" />
+	<meta property="og:image:height" content="630" />
 	<meta property="og:image:alt" content={song.album ? `${song.album} Cover Art` : 'Album Art'} />
 
 	<!-- Twitter Cards -->
@@ -491,6 +579,19 @@
 	>
 		[ HOME ]
 	</button>
+
+	<!-- Share Modal Trigger (Desktop) -->
+	{#if song.isPlaying || song.isRecentlyPlayed}
+		<button
+			class="hidden md:block fixed top-8 left-36 text-xs uppercase tracking-[0.3em] font-bold z-40 hover:opacity-70 cursor-pointer"
+			style="color: {textColor}; transition: color 1s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1);"
+			onclick={openShare}
+			onmouseenter={() => (cursorText = 'share')}
+			onmouseleave={() => (cursorText = 'listen')}
+		>
+			[ SHARE ]
+		</button>
+	{/if}
 
 	<!-- Mute Toggle Button (Desktop) -->
 	{#if song.previewUrl}
@@ -788,17 +889,32 @@
 				</div>
 			{/if}
 
-			{#if (song.isPlaying || song.isRecentlyPlayed) && song.songUrl && song.songUrl !== '#'}
-				<a
-					href={song.songUrl}
-					target="_blank"
-					rel="noopener noreferrer"
-					class="mt-3.5 text-[10.5px] font-mono uppercase tracking-[0.25em] font-semibold hover:opacity-100 opacity-60 transition-opacity flex items-center gap-1.5"
-					style="color: {textColor};"
-				>
-					<span>OPEN SPOTIFY</span>
-					<span class="text-xs">↗</span>
-				</a>
+			{#if (song.isPlaying || song.isRecentlyPlayed)}
+				<div class="mt-3.5 flex items-center justify-center gap-3.5 text-[10.5px] font-mono uppercase tracking-[0.25em] font-semibold select-none">
+					{#if song.songUrl && song.songUrl !== '#'}
+						<a
+							href={song.songUrl}
+							target="_blank"
+							rel="noopener noreferrer"
+							class="hover:opacity-100 opacity-60 transition-opacity flex items-center gap-1"
+							style="color: {textColor};"
+						>
+							<span>SPOTIFY</span>
+							<span class="text-xs">↗</span>
+						</a>
+					{/if}
+
+					<span class="opacity-30" style="color: {textColor};">•</span>
+
+					<button
+						onclick={openShare}
+						class="hover:opacity-100 opacity-60 transition-opacity flex items-center gap-1 cursor-pointer"
+						style="color: {textColor};"
+					>
+						<span>SHARE</span>
+						<span class="text-xs">↗</span>
+					</button>
+				</div>
 			{/if}
 		</div>
 	</div>
@@ -994,3 +1110,119 @@
 		</div>
 	</div>
 </div>
+
+{#if isShareOpen}
+	<!-- Share Modal Backdrop Overlay -->
+	<div
+		role="dialog"
+		aria-modal="true"
+		aria-label="Share Song"
+		class="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 backdrop-blur-xl bg-black/70 transition-opacity duration-300 select-none cursor-default"
+		onclick={closeShare}
+		onkeydown={(e) => e.key === 'Escape' && closeShare()}
+		tabindex="-1"
+	>
+		<!-- Modal Content Box -->
+		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<div
+			role="document"
+			class="w-full max-w-md rounded-2xl p-6 sm:p-7 relative border border-white/10 shadow-2xl backdrop-blur-2xl bg-[#090c15]/95 text-white transform transition-all duration-300"
+			onclick={(e) => e.stopPropagation()}
+		>
+			<!-- Header -->
+			<div class="flex items-center justify-between pb-4 border-b border-white/10">
+				<span class="text-[11px] font-mono uppercase tracking-[0.25em] text-white/60 font-bold">
+					[ SHARE // NOW PLAYING ]
+				</span>
+				<button
+					onclick={closeShare}
+					class="text-[11px] font-mono uppercase tracking-[0.2em] text-white/50 hover:text-white transition-colors cursor-pointer"
+				>
+					[ ESC / CLOSE ]
+				</button>
+			</div>
+
+			<!-- Track Snapshot -->
+			<div class="py-5 flex items-center gap-4">
+				{#if song.albumImageUrl}
+					<img
+						src={song.albumImageUrl}
+						alt={song.title || 'album'}
+						class="w-14 h-14 rounded-full object-cover border border-white/15 shadow-md flex-shrink-0"
+					/>
+				{/if}
+				<div class="overflow-hidden min-w-0">
+					<h4 class="boska text-xl font-bold uppercase tracking-wide truncate leading-tight">
+						{song.title || 'Now Playing'}
+					</h4>
+					<p class="text-xs font-medium tracking-[0.15em] uppercase text-white/60 truncate mt-1">
+						{song.artist || 'N3RD'}
+					</p>
+				</div>
+			</div>
+
+			<!-- Share Channels Grid -->
+			<div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 pb-1">
+				<!-- Snapchat Story -->
+				<button
+					onclick={shareToSnapchat}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group"
+				>
+					<span>SNAPCHAT STORY</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">↗</span>
+				</button>
+
+				<!-- Twitter / X -->
+				<button
+					onclick={shareToTwitter}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group"
+				>
+					<span>TWITTER / X</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">↗</span>
+				</button>
+
+				<!-- WhatsApp -->
+				<button
+					onclick={shareToWhatsApp}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group"
+				>
+					<span>WHATSAPP</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">↗</span>
+				</button>
+
+				<!-- Telegram -->
+				<button
+					onclick={shareToTelegram}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group"
+				>
+					<span>TELEGRAM</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all">↗</span>
+				</button>
+
+				<!-- Copy Link -->
+				<button
+					onclick={copyLink}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group {copied ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : ''}"
+				>
+					<span>{copied ? 'COPIED TO CLIPBOARD' : 'COPY URL'}</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 transition-all">{copied ? '✓' : '⧉'}</span>
+				</button>
+
+				<!-- Download 9:16 Story -->
+				<button
+					onclick={downloadStory}
+					class="w-full text-left px-3.5 py-3 rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] hover:border-white/20 transition-all flex items-center justify-between text-xs font-mono uppercase tracking-[0.15em] font-semibold cursor-pointer group"
+				>
+					<span>DOWNLOAD 9:16 ART</span>
+					<span class="text-xs opacity-50 group-hover:opacity-100 group-hover:translate-y-0.5 transition-all">↓</span>
+				</button>
+			</div>
+
+			<!-- Footer URL -->
+			<div class="pt-4 mt-3 border-t border-white/5 flex justify-between items-center text-[10px] font-mono text-white/40 tracking-widest">
+				<span>MUSIC.N3-RD.XYZ</span>
+				<span>ESC TO CLOSE</span>
+			</div>
+		</div>
+	</div>
+{/if}

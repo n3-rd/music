@@ -134,7 +134,159 @@ export const GET: RequestHandler = async ({ url }) => {
 		const artistY = titleYStart + titleLines.length * 48 + 14;
 		const subtitleY = artistY + 34;
 
-		const svg = `
+		// Format routing: standard 1200x630 OG image, 800x900 sticker for Snap Creative Kit, or 1080x1920 vertical Story
+		const format = url.searchParams.get('format');
+		let svg = '';
+		let width = 1200;
+
+		if (format === 'sticker') {
+			width = 800;
+			const stickerTitle = wrapTitle(rawTitle, 18).map(escapeXml);
+			svg = `
+<svg width="800" height="920" viewBox="0 0 800 920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="vinylShine" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="35%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="65%" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.75"/>
+    </radialGradient>
+
+    <filter id="stickerShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
+
+    <clipPath id="vinylArtClip">
+      <circle cx="400" cy="380" r="235"/>
+    </clipPath>
+  </defs>
+
+  <!-- Transparent Background with Floating Vinyl Disc & Label -->
+  <g filter="url(#stickerShadow)">
+    <!-- Vinyl Disc Body -->
+    <circle cx="400" cy="380" r="260" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.15" stroke-width="2"/>
+    <circle cx="400" cy="380" r="252" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2"/>
+    <circle cx="400" cy="380" r="244" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1.5"/>
+
+    <!-- Full Artwork Inside Vinyl -->
+    ${
+			imageBase64
+				? `<image href="${imageBase64}" x="165" y="145" width="470" height="470" preserveAspectRatio="xMidYMid slice" clip-path="url(#vinylArtClip)"/>`
+				: `<circle cx="400" cy="380" r="235" fill="#1e293b"/>`
+		}
+
+    <!-- Sheen & Vignette -->
+    <circle cx="400" cy="380" r="235" fill="url(#vinylShine)"/>
+    <circle cx="400" cy="380" r="235" fill="none" stroke="#000000" stroke-opacity="0.45" stroke-width="10"/>
+
+    <!-- Spindle Hub -->
+    <circle cx="400" cy="380" r="28" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.3" stroke-width="2.5"/>
+    <circle cx="400" cy="380" r="9" fill="#000000" stroke="#ffffff" stroke-opacity="0.5" stroke-width="1.5"/>
+  </g>
+
+  <!-- Typography Card Beneath Vinyl -->
+  <g transform="translate(400, 710)" text-anchor="middle">
+    <!-- Title in Boska -->
+    <text x="0" y="0" fill="#ffffff" font-family="Boska, Georgia, serif" font-size="34" font-weight="700" letter-spacing="-0.5">
+      ${stickerTitle.map((line, idx) => `<tspan x="0" dy="${idx === 0 ? 0 : 42}">${line}</tspan>`).join('')}
+    </text>
+
+    <!-- Artist in Inter -->
+    <text x="0" y="${stickerTitle.length * 42 + 10}" fill="#cbd5e1" font-family="Inter, sans-serif" font-size="17" font-weight="700" letter-spacing="2" text-transform="uppercase">${safeArtist}</text>
+
+    <!-- Branding in Monospace -->
+    <text x="0" y="${stickerTitle.length * 42 + 42}" fill="#94a3b8" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700" letter-spacing="3">[ N3RD // SPOTIFY ]</text>
+  </g>
+</svg>
+`;
+		} else if (format === 'story') {
+			width = 1080;
+			const storyTitle = wrapTitle(rawTitle, 16).map(escapeXml);
+			svg = `
+<svg width="1080" height="1920" viewBox="0 0 1080 1920" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="bgBlur" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="100"/>
+      <feColorMatrix type="saturate" values="1.8"/>
+    </filter>
+
+    <radialGradient id="vinylShine" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.1"/>
+      <stop offset="35%" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="65%" stop-color="#ffffff" stop-opacity="0.07"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.75"/>
+    </radialGradient>
+
+    <filter id="storyVinylShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="36" stdDeviation="48" flood-color="#000000" flood-opacity="0.85"/>
+    </filter>
+
+    <clipPath id="storyArtClip">
+      <circle cx="540" cy="850" r="320"/>
+    </clipPath>
+  </defs>
+
+  <!-- Ambient Background -->
+  <rect width="1080" height="1920" fill="${bgColor}"/>
+  ${
+		imageBase64
+			? `<image href="${imageBase64}" x="-150" y="-150" width="1380" height="2220" preserveAspectRatio="xMidYMid slice" opacity="0.55" filter="url(#bgBlur)"/>`
+			: ''
+	}
+
+  <!-- Header -->
+  <g transform="translate(540, 240)" text-anchor="middle">
+    <text x="0" y="0" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="16" font-weight="700" letter-spacing="5">[ N3RD // SPOTIFY ]</text>
+  </g>
+
+  <!-- Center Vinyl Record -->
+  <g filter="url(#storyVinylShadow)">
+    <circle cx="540" cy="850" r="360" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.15" stroke-width="3"/>
+    <circle cx="540" cy="850" r="350" fill="none" stroke="#ffffff" stroke-opacity="0.06" stroke-width="2.5"/>
+    <circle cx="540" cy="850" r="338" fill="none" stroke="#ffffff" stroke-opacity="0.04" stroke-width="2"/>
+
+    ${
+			imageBase64
+				? `<image href="${imageBase64}" x="220" y="530" width="640" height="640" preserveAspectRatio="xMidYMid slice" clip-path="url(#storyArtClip)"/>`
+				: `<circle cx="540" cy="850" r="320" fill="#1e293b"/>`
+		}
+
+    <circle cx="540" cy="850" r="320" fill="url(#vinylShine)"/>
+    <circle cx="540" cy="850" r="320" fill="none" stroke="#000000" stroke-opacity="0.45" stroke-width="12"/>
+
+    <circle cx="540" cy="850" r="40" fill="#0a0d14" stroke="#ffffff" stroke-opacity="0.3" stroke-width="3"/>
+    <circle cx="540" cy="850" r="14" fill="#000000" stroke="#ffffff" stroke-opacity="0.5" stroke-width="2"/>
+  </g>
+
+  <!-- Typography Content -->
+  <g transform="translate(540, 1340)" text-anchor="middle">
+    <!-- Title in Boska -->
+    <text x="0" y="0" fill="${textColor}" font-family="Boska, Georgia, serif" font-size="56" font-weight="700" letter-spacing="-0.5">
+      ${storyTitle.map((line, idx) => `<tspan x="0" dy="${idx === 0 ? 0 : 68}">${line}</tspan>`).join('')}
+    </text>
+
+    <!-- Artist in Inter -->
+    <text x="0" y="${storyTitle.length * 68 + 16}" fill="${textMutedColor}" font-family="Inter, sans-serif" font-size="26" font-weight="700" letter-spacing="3" text-transform="uppercase">${safeArtist}</text>
+
+    <!-- Subtitle in Monospace -->
+    <text x="0" y="${storyTitle.length * 68 + 64}" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="18" font-weight="700" letter-spacing="4" text-transform="uppercase">${statusOrAlbum}</text>
+
+    <!-- Scrubber Rail -->
+    <g transform="translate(-360, ${storyTitle.length * 68 + 120})">
+      <rect width="720" height="4" rx="2" fill="${railBg}"/>
+      <rect width="320" height="4" rx="2" fill="${textColor}"/>
+      <text x="0" y="32" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="16" font-weight="700" letter-spacing="1">0:18</text>
+      <text x="720" y="32" text-anchor="end" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="16" font-weight="700" letter-spacing="1">-1:38</text>
+    </g>
+
+    <!-- Footer URL -->
+    <text x="0" y="${storyTitle.length * 68 + 240}" fill="${textColor}" font-family="JetBrains Mono, monospace" font-size="18" font-weight="700" letter-spacing="5">MUSIC.N3-RD.XYZ</text>
+  </g>
+</svg>
+`;
+		} else {
+			// Standard 1200x630 Horizontal OG Card
+			svg = `
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <filter id="bgBlur" x="-30%" y="-30%" width="160%" height="160%">
@@ -226,13 +378,14 @@ export const GET: RequestHandler = async ({ url }) => {
   </g>
 </svg>
 `;
+		}
 
 		const fontFiles = getFontFiles();
 
 		const resvg = new Resvg(svg, {
 			fitTo: {
 				mode: 'width',
-				value: 1200
+				value: width
 			},
 			font: {
 				fontFiles,
