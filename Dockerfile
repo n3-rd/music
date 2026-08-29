@@ -6,11 +6,14 @@ WORKDIR /app
 # Enable corepack and prepare pnpm
 RUN corepack enable && corepack prepare pnpm@latest --activate
 
-# Copy package descriptors
-COPY package.json pnpm-lock.yaml* ./
+# Disable pnpm build scripts prompt for CI/Docker builds
+ENV PNPM_CONFIG_IGNORED_BUILDS=false
+
+# Copy package descriptors and pnpm configs
+COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* .npmrc* ./
 
 # Install all dependencies
-RUN pnpm install --frozen-lockfile || pnpm install
+RUN pnpm install
 
 # Copy source code
 COPY . .
