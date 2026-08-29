@@ -1,0 +1,20 @@
+@import 'tailwindcss';
+
+@keyframes marquee {
+	0% {
+		transform: translateX(0);
+	}
+	100% {
+		transform: translateX(-50%);
+	}
+}
+
+.boska {
+	font-family: 'Boska', serif;
+}
+.anton {
+	font-family: 'Anton', serif;
+}
+.panchang {
+	font-family: 'Panchang', serif;
+}
