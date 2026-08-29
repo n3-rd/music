@@ -1,9 +1,39 @@
 import { Resvg } from '@resvg/resvg-js';
 import { getNowPlaying } from '$lib/spotify';
+import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RequestHandler } from './$types';
 
-const fontsDir = join(process.cwd(), 'src/lib/fonts');
+function getFontFiles(): string[] {
+	const candidates = [
+		join(process.cwd(), 'src/lib/fonts'),
+		join(process.cwd(), 'static/fonts'),
+		join(process.cwd(), 'fonts'),
+		'/app/src/lib/fonts',
+		'/app/static/fonts',
+		'/app/fonts'
+	];
+
+	const files: string[] = [];
+	for (const dir of candidates) {
+		if (existsSync(dir)) {
+			try {
+				const entries = readdirSync(dir);
+				for (const entry of entries) {
+					if (entry.endsWith('.ttf') || entry.endsWith('.otf')) {
+						const fullPath = join(dir, entry);
+						if (!files.includes(fullPath)) {
+							files.push(fullPath);
+						}
+					}
+				}
+			} catch (e) {
+				console.warn('[OG Image] Error reading font dir:', dir, e);
+			}
+		}
+	}
+	return files;
+}
 
 function escapeXml(unsafe: string): string {
 	return unsafe
@@ -14,7 +44,7 @@ function escapeXml(unsafe: string): string {
 		.replace(/'/g, '&apos;');
 }
 
-function wrapTitle(text: string, maxChars = 22): string[] {
+function wrapTitle(text: string, maxChars = 20): string[] {
 	if (text.length <= maxChars) return [text];
 	const words = text.split(' ');
 	const lines: string[] = [];
@@ -36,15 +66,14 @@ function wrapTitle(text: string, maxChars = 22): string[] {
 	return lines;
 }
 
-// Extract approximate dominant RGB from raw image buffer
+// Approximate dominant RGB from buffer samples
 function extractAverageColor(buffer: Buffer): { r: number; g: number; b: number } {
 	let totalR = 0,
 		totalG = 0,
 		totalB = 0,
 		count = 0;
-	// Sample bytes across buffer
-	const step = Math.max(1, Math.floor(buffer.length / 500));
-	for (let i = 100; i < buffer.length - 3; i += step) {
+	const step = Math.max(1, Math.floor(buffer.length / 600));
+	for (let i = 200; i < buffer.length - 4; i += step) {
 		totalR += buffer[i];
 		totalG += buffer[i + 1];
 		totalB += buffer[i + 2];
@@ -62,9 +91,9 @@ export const GET: RequestHandler = async ({ url }) => {
 	try {
 		const song = await getNowPlaying();
 
-		const rawTitle = url.searchParams.get('t') || song.title || 'Not Playing';
-		const rawArtist = url.searchParams.get('a') || song.artist || 'Currently offline';
-		const rawAlbum = url.searchParams.get('album') || song.album || '';
+		const rawTitle = (url.searchParams.get('t') || song.title || 'NOT PLAYING').toUpperCase();
+		const rawArtist = (url.searchParams.get('a') || song.artist || 'CURRENTLY OFFLINE').toUpperCase();
+		const rawAlbum = (url.searchParams.get('album') || song.album || '').toUpperCase();
 		const imageUrl = song.albumImageUrl || '';
 
 		let imageBase64 = '';
@@ -85,25 +114,25 @@ export const GET: RequestHandler = async ({ url }) => {
 			}
 		}
 
-		// Luminance & high-contrast palette matching mobile
+		// Calculate relative perceived luminance (ITU-R BT.709)
 		const luminance = (0.2126 * avgColor.r + 0.7152 * avgColor.g + 0.0722 * avgColor.b) / 255;
-		const isLight = luminance > 0.52;
+		const isLight = luminance > 0.42;
 
 		const bgColor = `rgb(${avgColor.r}, ${avgColor.g}, ${avgColor.b})`;
-		const textColor = isLight ? '#0c0e14' : '#ffffff';
-		const textMutedColor = isLight ? 'rgba(12, 14, 20, 0.65)' : 'rgba(255, 255, 255, 0.65)';
-		const railBg = isLight ? 'rgba(12, 14, 20, 0.15)' : 'rgba(255, 255, 255, 0.2)';
+		const textColor = isLight ? '#06080e' : '#ffffff';
+		const textMutedColor = isLight ? 'rgba(6, 8, 14, 0.75)' : 'rgba(255, 255, 255, 0.75)';
+		const railBg = isLight ? 'rgba(6, 8, 14, 0.15)' : 'rgba(255, 255, 255, 0.25)';
 
-		const titleLines = wrapTitle(rawTitle, 22).map(escapeXml);
-		const safeArtist = escapeXml(rawArtist.length > 36 ? rawArtist.slice(0, 34) + '...' : rawArtist);
+		const titleLines = wrapTitle(rawTitle, 20).map(escapeXml);
+		const safeArtist = escapeXml(rawArtist.length > 34 ? rawArtist.slice(0, 32) + '...' : rawArtist);
 		const statusOrAlbum = escapeXml(
-			song.isRecentlyPlayed ? 'LAST PLAYED' : rawAlbum ? rawAlbum.slice(0, 36) : 'LIVE STREAM'
+			song.isRecentlyPlayed ? 'LAST PLAYED' : rawAlbum ? rawAlbum.slice(0, 32) : 'LIVE STREAM'
 		);
 
 		const titleFontSize = titleLines.length > 1 ? 40 : 48;
-		const titleYStart = titleLines.length > 1 ? 235 : 255;
-		const artistY = titleYStart + titleLines.length * 48 + 10;
-		const subtitleY = artistY + 36;
+		const titleYStart = titleLines.length > 1 ? 230 : 255;
+		const artistY = titleYStart + titleLines.length * 48 + 14;
+		const subtitleY = artistY + 34;
 
 		const svg = `
 <svg width="1200" height="630" viewBox="0 0 1200 630" xmlns="http://www.w3.org/2000/svg">
@@ -166,37 +195,39 @@ export const GET: RequestHandler = async ({ url }) => {
     <circle cx="290" cy="315" r="7" fill="#000000" stroke="#ffffff" stroke-opacity="0.4" stroke-width="1"/>
   </g>
 
-  <!-- Typography Content (Exact Mobile Layout & Text Type) -->
+  <!-- Typography Content (Exact Mobile Layout & High Contrast Text) -->
   <g transform="translate(560, 0)">
-    <!-- Top Header: [ HOME ] style label (NO beeping badges) -->
-    <text x="0" y="145" fill="${textMutedColor}" font-family="monospace" font-size="12" font-weight="700" letter-spacing="4">[ N3RD // SPOTIFY ]</text>
+    <!-- Top Header: [ N3RD // SPOTIFY ] (NO badges) -->
+    <text x="0" y="145" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="4">[ N3RD // SPOTIFY ]</text>
 
-    <!-- Track Title in Boska Editorial Serif -->
+    <!-- Track Title in Boska Editorial Serif (Uppercase) -->
     <text x="0" y="${titleYStart}" fill="${textColor}" font-family="Boska, Georgia, serif" font-size="${titleFontSize}" font-weight="700" letter-spacing="-0.5">
       ${titleLines.map((line, idx) => `<tspan x="0" dy="${idx === 0 ? 0 : 50}">${line}</tspan>`).join('')}
     </text>
 
-    <!-- Artist in Clean Tracked Uppercase -->
-    <text x="0" y="${artistY}" fill="${textMutedColor}" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="600" letter-spacing="2.5" text-transform="uppercase">${safeArtist}</text>
+    <!-- Artist in Clean Tracked Uppercase Inter -->
+    <text x="0" y="${artistY}" fill="${textMutedColor}" font-family="Inter, sans-serif" font-size="19" font-weight="700" letter-spacing="2.5" text-transform="uppercase">${safeArtist}</text>
 
     <!-- Subtitle (LAST PLAYED or Album Name) -->
-    <text x="0" y="${subtitleY}" fill="${textMutedColor}" font-family="monospace" font-size="13" font-weight="600" letter-spacing="3" text-transform="uppercase">${statusOrAlbum}</text>
+    <text x="0" y="${subtitleY}" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="3" text-transform="uppercase">${statusOrAlbum}</text>
 
     <!-- Minimalist Scrubber Progress Bar -->
     <g transform="translate(0, 440)">
       <rect width="520" height="3" rx="1.5" fill="${railBg}"/>
       <rect width="240" height="3" rx="1.5" fill="${textColor}"/>
-      <text x="0" y="24" fill="${textMutedColor}" font-family="monospace" font-size="11" font-weight="600" letter-spacing="1">0:18</text>
-      <text x="520" y="24" text-anchor="end" fill="${textMutedColor}" font-family="monospace" font-size="11" font-weight="600" letter-spacing="1">-1:38</text>
+      <text x="0" y="24" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700" letter-spacing="1">0:18</text>
+      <text x="520" y="24" text-anchor="end" fill="${textMutedColor}" font-family="JetBrains Mono, monospace" font-size="12" font-weight="700" letter-spacing="1">-1:38</text>
     </g>
 
     <!-- Direct Spotify Action Link -->
     <g transform="translate(0, 520)">
-      <text x="0" y="0" fill="${textColor}" font-family="monospace" font-size="12" font-weight="700" letter-spacing="3">OPEN SPOTIFY ↗</text>
+      <text x="0" y="0" fill="${textColor}" font-family="JetBrains Mono, monospace" font-size="13" font-weight="700" letter-spacing="3">OPEN SPOTIFY ↗</text>
     </g>
   </g>
 </svg>
 `;
+
+		const fontFiles = getFontFiles();
 
 		const resvg = new Resvg(svg, {
 			fitTo: {
@@ -204,8 +235,8 @@ export const GET: RequestHandler = async ({ url }) => {
 				value: 1200
 			},
 			font: {
-				fontDirs: [fontsDir],
-				defaultFontFamily: 'Boska',
+				fontFiles,
+				defaultFontFamily: 'Inter',
 				loadSystemFonts: true
 			}
 		});
