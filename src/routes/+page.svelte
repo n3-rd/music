@@ -325,26 +325,46 @@
 		isMuted = !isMuted;
 	}
 
-	function shareToSnapchat() {
+	async function shareToSnapchat() {
 		const pageUrl = 'https://music.n3-rd.xyz';
-		const stickerUrl = `https://music.n3-rd.xyz/api/og?format=sticker${song.title ? `&t=${encodeURIComponent(song.title)}&a=${encodeURIComponent(song.artist)}` : ''}`;
+		const title = `N3RD is listening to ${song.title || 'Music'} by ${song.artist || 'N3RD'}`;
+		const storyUrl = `/api/og?format=story${song.title ? `&t=${encodeURIComponent(song.title)}&a=${encodeURIComponent(song.artist)}&album=${encodeURIComponent(song.album || '')}` : ''}`;
 
-		const snapWebUrl = `https://www.snapchat.com/share?attachmentUrl=${encodeURIComponent(pageUrl)}&sticker=${encodeURIComponent(stickerUrl)}`;
-		const snapAppUrl = `snapchat://creativekit/preview?attachmentUrl=${encodeURIComponent(pageUrl)}&sticker=${encodeURIComponent(stickerUrl)}`;
-
-		if (typeof window !== 'undefined') {
-			if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
-				const start = Date.now();
-				window.location.href = snapAppUrl;
-				setTimeout(() => {
-					if (Date.now() - start < 1500) {
-						window.open(snapWebUrl, '_blank');
+		if (typeof navigator !== 'undefined' && navigator.share) {
+			try {
+				const response = await fetch(storyUrl);
+				if (response.ok) {
+					const blob = await response.blob();
+					const file = new File(
+						[blob],
+						`${(song.title || 'music').toLowerCase().replace(/[^a-z0-9]/g, '-')}-story.png`,
+						{ type: 'image/png' }
+					);
+					if (navigator.canShare && navigator.canShare({ files: [file] })) {
+						await navigator.share({
+							title,
+							text: `${title} — ${pageUrl}`,
+							url: pageUrl,
+							files: [file]
+						});
+						return;
 					}
-				}, 800);
-			} else {
-				window.open(snapWebUrl, '_blank', 'width=600,height=750');
+				}
+				await navigator.share({
+					title,
+					text: title,
+					url: pageUrl
+				});
+				return;
+			} catch (err: any) {
+				if (err?.name === 'AbortError') return;
+				console.warn('[Share] Native share fallback:', err);
 			}
 		}
+
+		// Clean Snapchat web link share without rejected query params
+		const snapWebUrl = `https://www.snapchat.com/share?link=${encodeURIComponent(pageUrl)}`;
+		window.open(snapWebUrl, '_blank', 'width=600,height=750');
 	}
 
 	function updateBgColor(imageUrl: string) {
@@ -1124,6 +1144,7 @@
 	>
 		<!-- Modal Content Box -->
 		<!-- svelte-ignore a11y_click_events_have_key_events -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			role="document"
 			class="w-full max-w-md rounded-2xl p-6 sm:p-7 relative border border-white/10 shadow-2xl backdrop-blur-2xl bg-[#090c15]/95 text-white transform transition-all duration-300"
