@@ -48,6 +48,7 @@
 	let bgColor = $state('rgb(30, 58, 147)');
 	let textColor = $state('rgb(255, 255, 255)');
 	let textMutedColor = $state('rgba(255, 255, 255, 0.6)');
+	let isLight = $state(false);
 	let cursorText = $state('listen');
 
 	// Spotify track state initialized with SSR data
@@ -254,10 +255,10 @@
 
 	function handlePageClick(event: MouseEvent) {
 		const target = event.target as HTMLElement;
-		if (target && target.closest('button')) {
+		if (target && (target.closest('button') || target.closest('a'))) {
 			return;
 		}
-		if ((song.isPlaying || song.isRecentlyPlayed) && song.songUrl && song.songUrl !== '#') {
+		if (!isMobile && (song.isPlaying || song.isRecentlyPlayed) && song.songUrl && song.songUrl !== '#') {
 			window.open(song.songUrl, '_blank');
 		}
 	}
@@ -301,32 +302,17 @@
 				const bgB = Math.round(totalB / count);
 				bgColor = `rgb(${bgR}, ${bgG}, ${bgB})`;
 
-				let maxDist = -1;
-				let textR = 255,
-					textG = 255,
-					textB = 255;
+				// Standard ITU-R BT.709 perceived luminance
+				const luminance = (0.2126 * bgR + 0.7152 * bgG + 0.0722 * bgB) / 255;
+				isLight = luminance > 0.52;
 
-				for (let i = 0; i < imgData.length; i += 4) {
-					const pr = imgData[i];
-					const pg = imgData[i + 1];
-					const pb = imgData[i + 2];
-
-					const dist = (pr - bgR) ** 2 + (pg - bgG) ** 2 + (pb - bgB) ** 2;
-
-					if (dist > maxDist) {
-						maxDist = dist;
-						textR = pr;
-						textG = pg;
-						textB = pb;
-					}
+				if (isLight) {
+					textColor = 'rgb(12, 14, 20)';
+					textMutedColor = 'rgba(12, 14, 20, 0.65)';
+				} else {
+					textColor = 'rgb(255, 255, 255)';
+					textMutedColor = 'rgba(255, 255, 255, 0.65)';
 				}
-
-				textColor = `rgb(${textR}, ${textG}, ${textB})`;
-
-				const mutedR = Math.round(textR * 0.65 + bgR * 0.35);
-				const mutedG = Math.round(textG * 0.65 + bgG * 0.35);
-				const mutedB = Math.round(textB * 0.65 + bgB * 0.35);
-				textMutedColor = `rgb(${mutedR}, ${mutedG}, ${mutedB})`;
 			} catch (err) {
 				console.error('[Spotify Color Extraction Error]:', err);
 			}
@@ -365,9 +351,10 @@
 						}, tickRate);
 					}
 				} else {
+					isLight = false;
 					bgColor = 'rgb(30, 58, 147)';
 					textColor = 'rgb(255, 255, 255)';
-					textMutedColor = 'rgba(255, 255, 255, 0.6)';
+					textMutedColor = 'rgba(255, 255, 255, 0.65)';
 
 					if (progressInterval !== undefined) {
 						clearInterval(progressInterval);
@@ -467,24 +454,19 @@
 	onmouseleave={handleMouseLeave}
 	onclick={handlePageClick}
 >
-	<!-- Apple Music style Blurred Background Art Mesh -->
+	<!-- Blurred Background Art Mesh -->
 	{#if (song.isPlaying || song.isRecentlyPlayed) && song.albumImageUrl}
 		<div class="absolute inset-0 overflow-hidden pointer-events-none z-0">
 			<div
-				class="absolute inset-[-15%] bg-cover bg-center filter blur-[60px] saturate-[200%] opacity-[0.6] scale-[1.2]"
+				class="absolute inset-[-20%] bg-cover bg-center filter blur-[80px] saturate-[160%] opacity-[0.45] scale-[1.25]"
 				style="background-image: url({song.albumImageUrl}); will-change: transform, opacity; transition: background-image 2s cubic-bezier(0.22, 1, 0.36, 1), opacity 2s cubic-bezier(0.22, 1, 0.36, 1);"
-			></div>
-			<!-- Blend overlay -->
-			<div class="absolute inset-0 bg-black/20"></div>
-			<div
-				class="absolute inset-0 bg-gradient-to-b from-transparent via-[#050b1c]/40 to-[#050b1c] md:hidden"
 			></div>
 		</div>
 	{/if}
 
-	<!-- Persistent Back Button to Portfolio -->
+	<!-- Persistent Back Button to Portfolio (Desktop) -->
 	<button
-		class="fixed top-4 left-4 md:top-8 md:left-8 text-xs uppercase tracking-[0.3em] font-bold z-50 hover:opacity-70 cursor-pointer"
+		class="hidden md:block fixed top-8 left-8 text-xs uppercase tracking-[0.3em] font-bold z-50 hover:opacity-70 cursor-pointer"
 		style="color: {textColor}; transition: color 1s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1);"
 		onclick={goBack}
 		onmouseenter={() => (cursorText = 'home')}
@@ -493,11 +475,11 @@
 		[ HOME ]
 	</button>
 
-	<!-- Mute Toggle Button -->
+	<!-- Mute Toggle Button (Desktop) -->
 	{#if song.previewUrl}
 		<button
-			class="fixed top-4 right-4 md:top-8 md:right-8 z-50 w-10 h-10 md:w-12 md:h-12 flex items-center justify-center rounded-full border border-white/20 transition-all duration-300 hover:scale-105 hover:bg-white/10 cursor-pointer"
-			style="color: {textColor}; background-color: rgba(0,0,0,0.1); backdrop-filter: blur(8px);"
+			class="hidden md:flex fixed top-8 right-8 z-50 w-12 h-12 items-center justify-center rounded-full border border-current/20 transition-all duration-300 hover:scale-105 hover:bg-current/5 cursor-pointer"
+			style="color: {textColor};"
 			onclick={toggleMute}
 			aria-label={isMuted ? 'Unmute' : 'Mute'}
 			onmouseenter={() => (cursorText = isMuted ? 'unmute' : 'mute')}
@@ -564,97 +546,145 @@
 		</div>
 	{/if}
 
-	<!-- MOBILE NATIVE LAYOUT: Vinyl Player -->
-	<div class="flex md:hidden flex-col absolute inset-0 z-10 pt-20 pb-10 px-6 overflow-hidden">
-		<!-- Infinite Marquee Header -->
-		<div class="w-full absolute top-8 left-0 right-0 overflow-hidden pointer-events-none z-20">
-			<div
-				class="flex whitespace-nowrap animate-[marquee_15s_linear_infinite]"
-				style="color: {textColor}; opacity: {mounted ? 0.9 : 0}; transition: opacity 1s;"
+	<!-- MOBILE NATIVE LAYOUT: Clean Editorial Vinyl Player -->
+	<div class="flex md:hidden flex-col justify-between items-center h-[100dvh] w-full px-6 pt-6 pb-8 overflow-hidden relative z-10">
+		<!-- Top Bar: Nav & Mute Toggle (NO pill badges) -->
+		<header class="w-full flex items-center justify-between z-30">
+			<button
+				class="text-xs uppercase tracking-[0.3em] font-bold cursor-pointer hover:opacity-70 active:scale-95 transition-opacity"
+				style="color: {textColor};"
+				onclick={goBack}
+				aria-label="Back to home"
 			>
-				<h2 class="text-[7vw] panchang leading-none px-4 mix-blend-overlay">
-					NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING •
-				</h2>
-				<span class="text-[7vw] panchang leading-none px-4 mix-blend-overlay" aria-hidden="true">
-					NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING • NOW PLAYING •
-				</span>
-			</div>
-		</div>
+				[ HOME ]
+			</button>
 
-		<div class="flex-1 flex flex-col items-center justify-center w-full max-w-sm mx-auto mt-12">
-			{#if isLoading}
-				<div
-					class="w-64 h-64 rounded-full bg-white/5 border border-white/10 shadow-2xl flex items-center justify-center animate-pulse mb-12"
+			{#if song.previewUrl}
+				<button
+					class="w-8 h-8 flex items-center justify-center cursor-pointer hover:opacity-70 active:scale-90 transition-all"
+					style="color: {textColor};"
+					onclick={toggleMute}
+					aria-label={isMuted ? 'Unmute preview' : 'Mute preview'}
 				>
+					{#if isMuted}
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+							<line x1="23" y1="9" x2="17" y2="15"></line>
+							<line x1="17" y1="9" x2="23" y2="15"></line>
+						</svg>
+					{:else}
+						<svg
+							xmlns="http://www.w3.org/2000/svg"
+							width="16"
+							height="16"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							stroke-width="2"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						>
+							<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+							<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+							<path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+						</svg>
+					{/if}
+				</button>
+			{/if}
+		</header>
+
+		<!-- Center: Vinyl Record Disc -->
+		<div class="flex-1 flex flex-col items-center justify-center w-full py-4 my-auto relative">
+			{#if isLoading}
+				<div class="w-[min(70vw,270px)] aspect-square rounded-full bg-black/10 border border-current/10 shadow-2xl flex items-center justify-center animate-pulse">
 					<div
-						class="w-16 h-16 rounded-full border-2 border-dashed animate-spin"
+						class="w-14 h-14 rounded-full border-2 border-dashed animate-spin"
 						style="animation-duration: 8s; border-color: {textColor}; opacity: 0.25;"
 					></div>
 				</div>
-				<div class="w-full text-center select-none animate-pulse" style="color: {textColor};">
-					<h3 class="text-3xl font-bold uppercase tracking-wider boska">Connecting</h3>
-					<p class="text-xs uppercase tracking-widest mt-2" style="color: {textMutedColor};">
-						Retrieving Spotify Stream...
+				<div class="text-center select-none animate-pulse mt-6" style="color: {textColor};">
+					<h3 class="text-2xl font-bold uppercase tracking-wider boska">Connecting</h3>
+					<p class="text-[11px] font-mono uppercase tracking-widest mt-1.5 opacity-60">
+						Retrieving Spotify stream...
 					</p>
 				</div>
 			{:else}
 				{#if (song.isPlaying || song.isRecentlyPlayed) && song.albumImageUrl}
-					<!-- Vinyl Record -->
-					<div
-						class="relative w-72 h-72 mb-12 pointer-events-auto"
+					<a
+						href={song.songUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						class="group relative w-[min(72vw,280px)] aspect-square rounded-full cursor-pointer select-none transition-transform duration-300 active:scale-95"
 						style="
 							opacity: {exiting ? 0 : mounted ? 1 : 0};
-							transform: translate3d(0, {exiting ? '20px' : mounted ? '0' : '20px'}, 0);
-							transition: opacity 1s cubic-bezier(0.22, 1, 0.36, 1), transform 1s cubic-bezier(0.22, 1, 0.36, 1);
+							transform: translate3d(0, {exiting ? '16px' : mounted ? '0' : '16px'}, 0);
+							transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
 						"
+						aria-label="Open {song.title} on Spotify"
 					>
-						<!-- Outer Vinyl edge -->
+						<!-- Physical Vinyl Outer Shadow & Body -->
 						<div
-							class="absolute inset-[-4px] rounded-full bg-black shadow-[0_20px_50px_rgba(0,0,0,0.7)]"
+							class="absolute inset-[-4px] rounded-full bg-[#0a0d14] shadow-[0_24px_50px_-10px_rgba(0,0,0,0.6),0_0_0_1px_rgba(0,0,0,0.15)]"
 						></div>
-						<!-- Record grooves -->
+						<!-- Concentric Vinyl Grooves -->
+						<div class="absolute inset-[2px] rounded-full border border-white/[0.06] pointer-events-none z-10"></div>
+						<div class="absolute inset-[8px] rounded-full border border-white/[0.04] pointer-events-none z-10"></div>
+						<div class="absolute inset-[16px] rounded-full border border-white/[0.03] pointer-events-none z-10"></div>
+
+						<!-- Anisotropic Sheen Flare -->
 						<div
-							class="absolute inset-[2px] rounded-full border border-white/5 pointer-events-none z-10"
-						></div>
-						<div
-							class="absolute inset-[12px] rounded-full border border-white/5 pointer-events-none z-10"
-						></div>
-						<div
-							class="absolute inset-[24px] rounded-full border border-white/5 pointer-events-none z-10"
+							class="absolute inset-0 rounded-full bg-[conic-gradient(from_0deg,transparent_0deg,rgba(255,255,255,0.08)_45deg,transparent_90deg,rgba(255,255,255,0.08)_225deg,transparent_270deg)] pointer-events-none z-20"
 						></div>
 
-						<a
-							href={song.songUrl}
-							target="_blank"
-							rel="noopener noreferrer"
-							class="absolute inset-0 rounded-full overflow-hidden transition-transform active:scale-95 z-20 shadow-[inset_0_0_40px_rgba(0,0,0,0.8)] border border-black/50 {song.isPlaying
-								? 'animate-[spin_8s_linear_infinite]'
+						<!-- Spinning Disc with Artwork -->
+						<div
+							class="w-full h-full rounded-full overflow-hidden relative z-10 {song.isPlaying
+								? 'animate-[spin_10s_linear_infinite]'
 								: ''}"
 							style="animation-play-state: {song.isPlaying ? 'running' : 'paused'};"
 						>
 							<img
-								class="w-full h-full object-cover mix-blend-screen scale-[1.1]"
+								class="w-full h-full object-cover rounded-full"
 								src={song.albumImageUrl}
-								alt={song.album || 'album-art'}
+								alt={song.album || song.title || 'album art'}
 								crossorigin="anonymous"
 							/>
 							<div
-								class="absolute inset-0 bg-gradient-to-tr from-black/40 via-transparent to-white/10 mix-blend-overlay"
+								class="absolute inset-0 rounded-full shadow-[inset_0_0_35px_rgba(0,0,0,0.6)]"
 							></div>
-							<!-- Center Hole -->
+
+							<!-- Center Spindle & Hub -->
 							<div
-								class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-[#050b1c] rounded-full shadow-inner border border-black z-30"
-							></div>
-						</a>
-					</div>
+								class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-[#0a0d14] border-2 border-white/20 shadow-[0_2px_10px_rgba(0,0,0,0.9)] z-30 flex items-center justify-center"
+							>
+								<div class="w-2.5 h-2.5 rounded-full bg-black border border-white/40"></div>
+							</div>
+						</div>
+					</a>
 				{:else}
+					<!-- Offline / Idle Disc -->
 					<div
-						class="w-64 h-64 rounded-full shadow-2xl mb-12 bg-black border border-white/5 flex items-center justify-center"
+						class="w-[min(70vw,270px)] aspect-square rounded-full shadow-2xl bg-black/40 border border-current/10 flex items-center justify-center relative"
+						style="
+							opacity: {exiting ? 0 : mounted ? 1 : 0};
+							transform: translate3d(0, {exiting ? '16px' : mounted ? '0' : '16px'}, 0);
+							transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1), transform 0.8s cubic-bezier(0.22, 1, 0.36, 1);
+						"
 					>
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
-							class="w-24 h-24 animate-spin"
-							style="animation-duration: 12s; color: {textColor}; opacity: 0.1;"
+							class="w-20 h-20 animate-spin"
+							style="animation-duration: 12s; color: {textColor}; opacity: 0.2;"
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
@@ -666,51 +696,92 @@
 						</svg>
 					</div>
 				{/if}
+			{/if}
+		</div>
 
-				<!-- Floating Glassmorphic Control Card -->
-				<div
-					class="w-full backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl shadow-2xl"
-					style="
-						color: {textColor};
-						opacity: {exiting ? 0 : mounted ? 1 : 0};
-						transform: translate3d(0, {exiting ? '20px' : mounted ? '0' : '20px'}, 0);
-						transition: opacity 1s cubic-bezier(0.22, 1, 0.36, 1) 0.1s, transform 1s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
-					"
-				>
-					<div class="text-center mb-6 overflow-hidden px-2">
-						{#if song.isPlaying || song.isRecentlyPlayed}
-							<h3 class="text-2xl font-bold tracking-tight drop-shadow-md leading-tight">
-								{song.title}
-							</h3>
-							<p class="text-base drop-shadow-sm opacity-80 mt-1">{song.artist}</p>
-						{:else}
-							<h3 class="text-2xl font-bold tracking-tight drop-shadow-md leading-tight">
-								Not Playing
-							</h3>
-							<p class="text-base drop-shadow-sm opacity-80 mt-1">Currently offline</p>
-						{/if}
-					</div>
-
-					{#if (song.isPlaying || song.isRecentlyPlayed) && durationMs > 0}
-						<div class="w-full">
-							<div
-								class="w-full h-1 bg-black/20 rounded-full overflow-hidden relative backdrop-blur-sm border border-white/5"
-							>
-								<div
-									class="absolute top-0 left-0 h-full rounded-full transition-all duration-100 ease-linear shadow-[0_0_10px_rgba(255,255,255,0.8)]"
-									style="background-color: {textColor}; width: {(currentProgressMs / durationMs) *
-										100}%;"
-								></div>
-							</div>
-							<div
-								class="flex justify-between w-full text-[10px] font-mono mt-3 opacity-80 tracking-wider font-bold"
-							>
-								<span>{formatTime(currentProgressMs)}</span>
-								<span>-{formatTime(durationMs - currentProgressMs)}</span>
-							</div>
-						</div>
+		<!-- Bottom: Editorial Track Details (NO pill bubbles) -->
+		<div
+			class="w-full max-w-sm flex flex-col items-center select-none z-30 pb-1"
+			style="
+				opacity: {exiting ? 0 : mounted ? 1 : 0};
+				transform: translate3d(0, {exiting ? '16px' : mounted ? '0' : '16px'}, 0);
+				transition: opacity 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s, transform 0.8s cubic-bezier(0.22, 1, 0.36, 1) 0.1s;
+			"
+		>
+			<div class="text-center w-full px-2">
+				{#if song.isPlaying || song.isRecentlyPlayed}
+					<h3
+						class="boska text-2xl sm:text-3xl font-bold uppercase tracking-wide leading-tight line-clamp-2 drop-shadow-sm"
+						style="color: {textColor};"
+					>
+						{song.title}
+					</h3>
+					<p
+						class="text-xs sm:text-sm font-medium tracking-[0.15em] uppercase mt-1.5"
+						style="color: {textMutedColor};"
+					>
+						{song.artist}
+					</p>
+					{#if song.isRecentlyPlayed}
+						<p
+							class="text-[10px] font-mono uppercase tracking-[0.25em] font-semibold mt-1"
+							style="color: {textMutedColor};"
+						>
+							LAST PLAYED
+						</p>
+					{:else if song.album}
+						<p
+							class="text-[10px] font-mono uppercase tracking-[0.2em] mt-1 opacity-70 truncate max-w-[280px] mx-auto"
+							style="color: {textMutedColor};"
+						>
+							{song.album}
+						</p>
 					{/if}
+				{:else}
+					<h3
+						class="boska text-2xl font-bold uppercase tracking-wider drop-shadow-sm"
+						style="color: {textColor};"
+					>
+						Not Playing
+					</h3>
+					<p class="text-xs font-mono uppercase tracking-widest mt-1" style="color: {textMutedColor};">
+						Currently offline on Spotify
+					</p>
+				{/if}
+			</div>
+
+			{#if (song.isPlaying || song.isRecentlyPlayed) && durationMs > 0}
+				<div class="w-full mt-4 px-1">
+					<div
+						class="w-full h-[2px] rounded-full overflow-hidden relative"
+						style="background-color: {isLight ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.2)'};"
+					>
+						<div
+							class="absolute top-0 left-0 h-full rounded-full transition-all duration-100 ease-linear"
+							style="background-color: {textColor}; width: {(currentProgressMs / durationMs) * 100}%;"
+						></div>
+					</div>
+					<div
+						class="flex justify-between w-full text-[10px] font-mono mt-1.5 tracking-widest font-semibold tabular-nums"
+						style="color: {textMutedColor};"
+					>
+						<span>{formatTime(currentProgressMs)}</span>
+						<span>-{formatTime(durationMs - currentProgressMs)}</span>
+					</div>
 				</div>
+			{/if}
+
+			{#if (song.isPlaying || song.isRecentlyPlayed) && song.songUrl && song.songUrl !== '#'}
+				<a
+					href={song.songUrl}
+					target="_blank"
+					rel="noopener noreferrer"
+					class="mt-3.5 text-[10.5px] font-mono uppercase tracking-[0.25em] font-semibold hover:opacity-100 opacity-60 transition-opacity flex items-center gap-1.5"
+					style="color: {textColor};"
+				>
+					<span>OPEN SPOTIFY</span>
+					<span class="text-xs">↗</span>
+				</a>
 			{/if}
 		</div>
 	</div>

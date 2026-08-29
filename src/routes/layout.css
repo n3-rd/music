@@ -10,11 +10,11 @@
 }
 
 .boska {
-	font-family: 'Boska', serif;
+	font-family: 'Boska', Georgia, serif;
 }
 .anton {
-	font-family: 'Anton', serif;
+	font-family: 'Anton', Impact, sans-serif;
 }
 .panchang {
-	font-family: 'Panchang', serif;
+	font-family: 'Panchang', system-ui, -apple-system, sans-serif;
 }
