@@ -458,12 +458,25 @@
 	onmouseleave={handleMouseLeave}
 	onclick={handlePageClick}
 >
-	<!-- Blurred Background Art Mesh -->
+	<!-- Blurred Animated Background Art Mesh (Mobile & Desktop) -->
 	{#if (song.isPlaying || song.isRecentlyPlayed) && song.albumImageUrl}
-		<div class="absolute inset-0 overflow-hidden pointer-events-none z-0">
+		<div class="absolute inset-0 overflow-hidden pointer-events-none z-0 select-none">
+			<!-- Layer 1: Drifting Primary Chromatic Field -->
 			<div
-				class="absolute inset-[-20%] bg-cover bg-center filter blur-[80px] saturate-[160%] opacity-[0.45] scale-[1.25]"
-				style="background-image: url({song.albumImageUrl}); will-change: transform, opacity; transition: background-image 2s cubic-bezier(0.22, 1, 0.36, 1), opacity 2s cubic-bezier(0.22, 1, 0.36, 1);"
+				class="absolute inset-[-25%] bg-cover bg-center filter blur-[50px] md:blur-[70px] saturate-[180%] opacity-[0.55] animate-[ambient-drift-1_15s_ease-in-out_infinite]"
+				style="background-image: url({song.albumImageUrl}); will-change: transform; transition: background-image 2s cubic-bezier(0.22, 1, 0.36, 1);"
+			></div>
+
+			<!-- Layer 2: Counter-drifting Dynamic Color Blobs -->
+			<div
+				class="absolute inset-[-30%] bg-cover bg-center filter blur-[65px] md:blur-[85px] saturate-[210%] opacity-[0.45] mix-blend-color-dodge animate-[ambient-drift-2_19s_ease-in-out_infinite]"
+				style="background-image: url({song.albumImageUrl}); will-change: transform; transition: background-image 2s cubic-bezier(0.22, 1, 0.36, 1);"
+			></div>
+
+			<!-- Layer 3: Rotating Ambient Atmospheric Bloom -->
+			<div
+				class="absolute inset-[-35%] bg-cover bg-center filter blur-[75px] md:blur-[95px] saturate-[160%] animate-[ambient-spin-glow_24s_linear_infinite]"
+				style="background-image: url({song.albumImageUrl}); will-change: transform, opacity; transition: background-image 2s cubic-bezier(0.22, 1, 0.36, 1);"
 			></div>
 		</div>
 	{/if}
