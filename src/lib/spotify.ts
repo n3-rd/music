@@ -198,3 +198,139 @@ export async function getNowPlaying(): Promise<SpotifyTrack> {
 		return fallback;
 	}
 }
+
+export interface EnrichedSpotifyTrack extends SpotifyTrack {
+	imageBase64: string;
+	color: {
+		r: number;
+		g: number;
+		b: number;
+		hex: string;
+	};
+	isLight: boolean;
+	formattedProgress: string;
+	formattedDuration: string;
+	formattedRemaining: string;
+	progressPercent: number;
+}
+
+function extractAverageColor(buffer: Buffer): { r: number; g: number; b: number } {
+	let totalR = 0,
+		totalG = 0,
+		totalB = 0,
+		count = 0;
+	const step = Math.max(1, Math.floor(buffer.length / 600));
+	for (let i = 200; i < buffer.length - 4; i += step) {
+		totalR += buffer[i];
+		totalG += buffer[i + 1];
+		totalB += buffer[i + 2];
+		count++;
+	}
+	if (count === 0) return { r: 30, g: 58, b: 147 };
+	return {
+		r: Math.round(totalR / count),
+		g: Math.round(totalG / count),
+		b: Math.round(totalB / count)
+	};
+}
+
+function formatTime(ms: number): string {
+	const totalSeconds = Math.floor(ms / 1000);
+	const minutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+let _cachedEnrichedTrack: EnrichedSpotifyTrack | null = null;
+let _cacheExpiresAt = 0;
+let _inFlightEnrichedPromise: Promise<EnrichedSpotifyTrack> | null = null;
+
+// Persistent cache for image base64 and dominant color across polling ticks
+let _cachedImageUrl = '';
+let _cachedImageBase64 = '';
+let _cachedAvgColor = { r: 30, g: 58, b: 147 };
+let _cachedIsLight = false;
+
+export async function getEnrichedNowPlaying(): Promise<EnrichedSpotifyTrack> {
+	const now = Date.now();
+	if (_cachedEnrichedTrack && now < _cacheExpiresAt) {
+		return _cachedEnrichedTrack;
+	}
+
+	if (_inFlightEnrichedPromise) {
+		return _inFlightEnrichedPromise;
+	}
+
+	_inFlightEnrichedPromise = (async () => {
+		try {
+			const song = await getNowPlaying();
+
+			let imageBase64 = _cachedImageBase64;
+			let avgColor = _cachedAvgColor;
+			let isLight = _cachedIsLight;
+
+			if (song.albumImageUrl && song.albumImageUrl !== _cachedImageUrl) {
+				try {
+					const imgRes = await fetch(song.albumImageUrl);
+					if (imgRes.ok) {
+						const arrayBuf = await imgRes.arrayBuffer();
+						const buffer = Buffer.from(arrayBuf);
+						avgColor = extractAverageColor(buffer);
+						const mime = imgRes.headers.get('content-type') || 'image/jpeg';
+						imageBase64 = `data:${mime};base64,${buffer.toString('base64')}`;
+
+						const luminance = (0.2126 * avgColor.r + 0.7152 * avgColor.g + 0.0722 * avgColor.b) / 255;
+						isLight = luminance > 0.42;
+
+						_cachedImageUrl = song.albumImageUrl;
+						_cachedImageBase64 = imageBase64;
+						_cachedAvgColor = avgColor;
+						_cachedIsLight = isLight;
+					}
+				} catch (e) {
+					console.error('[Spotify] Failed to fetch album image:', e);
+				}
+			} else if (!song.albumImageUrl) {
+				imageBase64 = '';
+				avgColor = { r: 30, g: 58, b: 147 };
+				isLight = false;
+				_cachedImageUrl = '';
+				_cachedImageBase64 = '';
+			}
+
+			const formattedProgress = formatTime(song.progressMs);
+			const formattedDuration = formatTime(song.durationMs);
+			const remainingMs = Math.max(0, song.durationMs - song.progressMs);
+			const formattedRemaining = `-${formatTime(remainingMs)}`;
+			const progressPercent = song.durationMs > 0 ? (song.progressMs / song.durationMs) * 100 : 0;
+
+			const hexColor = `#${avgColor.r.toString(16).padStart(2, '0')}${avgColor.g.toString(16).padStart(2, '0')}${avgColor.b.toString(16).padStart(2, '0')}`;
+
+			const enriched: EnrichedSpotifyTrack = {
+				...song,
+				imageBase64,
+				color: {
+					...avgColor,
+					hex: hexColor
+				},
+				isLight,
+				formattedProgress,
+				formattedDuration,
+				formattedRemaining,
+				progressPercent
+			};
+
+			_cachedEnrichedTrack = enriched;
+			_cacheExpiresAt = Date.now() + 5000; // 5-second internal cache for fast response
+			return enriched;
+		} catch (err) {
+			console.error('[Spotify] Error fetching enriched now playing:', err);
+			if (_cachedEnrichedTrack) return _cachedEnrichedTrack;
+			throw err;
+		} finally {
+			_inFlightEnrichedPromise = null;
+		}
+	})();
+
+	return _inFlightEnrichedPromise;
+}
