@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { Resvg } from '@resvg/resvg-js';
 
 export interface SpotifyTrack {
 	isPlaying: boolean;
@@ -214,24 +215,84 @@ export interface EnrichedSpotifyTrack extends SpotifyTrack {
 	progressPercent: number;
 }
 
-function extractAverageColor(buffer: Buffer): { r: number; g: number; b: number } {
-	let totalR = 0,
-		totalG = 0,
-		totalB = 0,
-		count = 0;
-	const step = Math.max(1, Math.floor(buffer.length / 600));
-	for (let i = 200; i < buffer.length - 4; i += step) {
-		totalR += buffer[i];
-		totalG += buffer[i + 1];
-		totalB += buffer[i + 2];
-		count++;
+function extractDominantColor(buffer: Buffer, mime = 'image/jpeg'): { r: number; g: number; b: number } {
+	try {
+		const b64 = buffer.toString('base64');
+		const svg = `<svg width="32" height="32" xmlns="http://www.w3.org/2000/svg"><image href="data:${mime};base64,${b64}" width="32" height="32"/></svg>`;
+		const resvg = new Resvg(svg);
+		const pixels = resvg.render().pixels;
+
+		let bestScore = -1;
+		let bestColor = { r: 0, g: 255, b: 157 };
+		const buckets = new Map<number, { r: number; g: number; b: number; count: number; score: number }>();
+
+		for (let i = 0; i < pixels.length; i += 4) {
+			const r = pixels[i];
+			const g = pixels[i + 1];
+			const b = pixels[i + 2];
+			const a = pixels[i + 3];
+			if (a < 128) continue;
+
+			const rn = r / 255,
+				gn = g / 255,
+				bn = b / 255;
+			const max = Math.max(rn, gn, bn),
+				min = Math.min(rn, gn, bn);
+			const l = (max + min) / 2;
+			const d = max - min;
+			const s = d === 0 ? 0 : l > 0.5 ? d / (2 - max - min) : d / (max + min);
+
+			// Filter out extreme black or white background noise
+			if (l < 0.1 || l > 0.92) continue;
+
+			const qr = Math.floor(r / 16) * 16;
+			const qg = Math.floor(g / 16) * 16;
+			const qb = Math.floor(b / 16) * 16;
+			const key = (qr << 16) | (qg << 8) | qb;
+
+			const weight = s + 0.2;
+			const existing = buckets.get(key) || { r: 0, g: 0, b: 0, count: 0, score: 0 };
+			existing.r += r;
+			existing.g += g;
+			existing.b += b;
+			existing.count += 1;
+			existing.score += weight;
+			buckets.set(key, existing);
+		}
+
+		for (const b of buckets.values()) {
+			if (b.score > bestScore) {
+				bestScore = b.score;
+				bestColor = {
+					r: Math.round(b.r / b.count),
+					g: Math.round(b.g / b.count),
+					b: Math.round(b.b / b.count)
+				};
+			}
+		}
+
+		if (bestScore === -1) {
+			let tr = 0,
+				tg = 0,
+				tb = 0,
+				tc = 0;
+			for (let i = 0; i < pixels.length; i += 4) {
+				if (pixels[i + 3] >= 128) {
+					tr += pixels[i];
+					tg += pixels[i + 1];
+					tb += pixels[i + 2];
+					tc++;
+				}
+			}
+			if (tc > 0) return { r: Math.round(tr / tc), g: Math.round(tg / tc), b: Math.round(tb / tc) };
+			return { r: 0, g: 255, b: 157 };
+		}
+
+		return bestColor;
+	} catch (e) {
+		console.error('[Spotify] Error extracting dominant color:', e);
+		return { r: 0, g: 255, b: 157 };
 	}
-	if (count === 0) return { r: 30, g: 58, b: 147 };
-	return {
-		r: Math.round(totalR / count),
-		g: Math.round(totalG / count),
-		b: Math.round(totalB / count)
-	};
 }
 
 function formatTime(ms: number): string {
@@ -275,9 +336,9 @@ export async function getEnrichedNowPlaying(): Promise<EnrichedSpotifyTrack> {
 					if (imgRes.ok) {
 						const arrayBuf = await imgRes.arrayBuffer();
 						const buffer = Buffer.from(arrayBuf);
-						avgColor = extractAverageColor(buffer);
 						const mime = imgRes.headers.get('content-type') || 'image/jpeg';
 						imageBase64 = `data:${mime};base64,${buffer.toString('base64')}`;
+						avgColor = extractDominantColor(buffer, mime);
 
 						const luminance = (0.2126 * avgColor.r + 0.7152 * avgColor.g + 0.0722 * avgColor.b) / 255;
 						isLight = luminance > 0.42;
