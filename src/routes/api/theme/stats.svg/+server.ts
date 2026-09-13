@@ -4,7 +4,7 @@ import type { RequestHandler } from './$types';
 export const GET: RequestHandler = async ({ url }) => {
 	const palette = await getThemePalette();
 
-	const target = new URL('https://github-readme-stats.vercel.app/api');
+	const target = new URL('https://readme-stats-fast.vercel.app/api');
 
 	target.searchParams.set('username', url.searchParams.get('username') || 'n3-rd');
 	target.searchParams.set('show_icons', url.searchParams.get('show_icons') || 'true');
